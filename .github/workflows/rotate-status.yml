@@ -27,7 +27,7 @@ jobs:
 
       - name: Rotate status
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN_STATUS }}
+          GH_TOKEN: ${{ secrets.STATUS_PAT }}
           # Set MODE to 'random' to randomize, or 'ordered' to go in sequence
           MODE: ${{ github.event.inputs.mode || 'ordered' }}
         run: |
