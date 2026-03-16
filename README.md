@@ -30,7 +30,7 @@ Push it to your own GitHub account. The workflow needs to live in a repo you own
 
 1. In your repo, go to **Settings → Secrets and variables → Actions**
 2. Click **New repository secret**
-3. Name: `GITHUB_TOKEN_STATUS`
+3. Name: `STATUS_PAT`
 4. Value: paste your token
 5. Save
 
