@@ -1,0 +1,77 @@
+name: Rotate GitHub Status
+
+on:
+  schedule:
+    # Runs every 4 hours
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Rotation mode'
+        required: false
+        default: 'ordered'
+        type: choice
+        options:
+          - ordered
+          - random
+
+jobs:
+  rotate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Rotate status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN_STATUS }}
+          # Set MODE to 'random' to randomize, or 'ordered' to go in sequence
+          MODE: ${{ github.event.inputs.mode || 'ordered' }}
+        run: |
+          set -e
+
+          STATUSES=$(jq -r '.statuses[]' status-list.json)
+          COUNT=$(jq '.statuses | length' status-list.json)
+          LAST_INDEX=$(jq '.last_index' state.json)
+
+          if [ "$MODE" = "random" ]; then
+            NEXT_INDEX=$(( RANDOM % COUNT ))
+            # Avoid repeating the same status back-to-back
+            while [ "$NEXT_INDEX" -eq "$LAST_INDEX" ] && [ "$COUNT" -gt 1 ]; do
+              NEXT_INDEX=$(( RANDOM % COUNT ))
+            done
+          else
+            NEXT_INDEX=$(( (LAST_INDEX + 1) % COUNT ))
+          fi
+
+          NEW_STATUS=$(jq -r --argjson i "$NEXT_INDEX" '.statuses[$i]' status-list.json)
+          echo "Setting status: $NEW_STATUS (index $NEXT_INDEX, mode: $MODE)"
+
+          # Update state file
+          jq --argjson i "$NEXT_INDEX" '.last_index = $i' state.json > state.tmp.json
+          mv state.tmp.json state.json
+
+          # Update GitHub profile status via GraphQL
+          curl -s -X POST https://api.github.com/graphql \
+            -H "Authorization: bearer $GH_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg msg "$NEW_STATUS" '{
+              query: "mutation($status: ChangeUserStatusInput!) { changeUserStatus(input: $status) { status { message } } }",
+              variables: {
+                status: {
+                  message: $msg,
+                  limitedAvailability: false
+                }
+              }
+            }')" | jq .
+
+      - name: Commit updated state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          git diff --cached --quiet || git commit -m "rotate status ($(date -u '+%Y-%m-%d %H:%M UTC'))"
+          git push
